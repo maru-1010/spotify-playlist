@@ -27,12 +27,12 @@ export default function App() {
     const saved = localStorage.getItem("spotify_token");
     if (saved) {
       try {
-        const { access_token, expires_at } = JSON.parse(saved);
-        // トークンの有効期限もチェック
-           if (access_token && expires_at > Date.now()) {
-            setIsLoggedIn(true);
-            return;
-           }
+        const { session_id, expires_at } = JSON.parse(saved);
+        // セッションIDと有効期限をチェック
+        if (session_id && expires_at && expires_at > Date.now()) {
+          setIsLoggedIn(true);
+          return;
+        }
       } catch {
         // パース失敗時はトークンを削除
         localStorage.removeItem("spotify_token");

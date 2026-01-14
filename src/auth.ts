@@ -1,6 +1,8 @@
 // src/auth.ts
 import { pkcePair } from "./lib/pkce";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+
 /** 認可画面へ遷移（PKCEでcode_challenge付き） */
 export async function beginLogin() {
   const { verifier, challenge } = await pkcePair();
@@ -38,32 +40,53 @@ export async function handleCallback() {
     throw new Error("verifier/redirect_uri missing");
   }
 
-  const body = new URLSearchParams({
-    grant_type: "authorization_code",
-    code,
-    redirect_uri: redirectUri, // ← beginLogin時と完全一致
-    client_id: import.meta.env.VITE_SPOTIFY_CLIENT_ID,
-    code_verifier: verifier,
-  });
-
-  const res = await fetch("https://accounts.spotify.com/api/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`token exchange failed: ${res.status} ${text}`);
+  // バックエンド経由でトークン交換
+  console.log('[Auth] API_BASE_URL:', API_BASE_URL);
+  console.log('[Auth] Calling:', `${API_BASE_URL}/api/auth/token`);
+  
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/auth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code,
+        code_verifier: verifier,
+        redirect_uri: redirectUri,
+      }),
+    });
+  } catch (fetchError) {
+    console.error('[Auth] Fetch error:', fetchError);
+    throw new Error(
+      `バックエンドサーバーに接続できませんでした。\n` +
+      `URL: ${API_BASE_URL}\n` +
+      `バックエンドサーバーが起動しているか確認してください。\n` +
+      `エラー: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`
+    );
   }
 
-  const token = await res.json(); // { access_token, expires_in, refresh_token? ... }
+  if (!res.ok) {
+    let errorMessage = 'Unknown error';
+    try {
+      const errorData = await res.json();
+      errorMessage = errorData.error || errorMessage;
+    } catch {
+      // JSONパースに失敗した場合はテキストとして取得
+      errorMessage = await res.text() || errorMessage;
+    }
+    throw new Error(`token exchange failed: ${res.status} ${errorMessage}`);
+  }
+
+  const tokenData = await res.json();
+  
+  // セッションIDとトークンをlocalStorageに保存
   localStorage.setItem(
     "spotify_token",
     JSON.stringify({
-      access_token: token.access_token,
-      refresh_token: token.refresh_token ?? null,
-      expires_at: Date.now() + token.expires_in * 1000,
+      session_id: tokenData.session_id,
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token ?? null,
+      expires_at: Date.now() + tokenData.expires_in * 1000,
     })
   );
 }
