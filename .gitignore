@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Environment variables & local certs
+.env
+.env.*
+!.env.example
+*.pem
+cert/
